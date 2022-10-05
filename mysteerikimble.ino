@@ -5,8 +5,8 @@ int segmentPinEnd = 9;
 int transistorOffset = 2;
 
 int targetNum = 43;
-unsigned int countDownMS = 15*60*1000; 
-unsigned int timercnt = 0;
+unsigned long countDownCentiSec;
+unsigned long timercnt = 0;
 
 char digitStates[10] = {
   B01110111, B01000001, B00111011, B01101011, B01001101, B01101110, B01111110, B01000011, B01111111, B01001111};
@@ -43,19 +43,28 @@ void setupTimer() {
   sei();
 }
 
+int debugIndexOffset = 2;
 
 ISR(TIMER0_COMPA_vect){//timer0 interrupt 50Hz
 
-  countDownMS -= 10;
-  int targetMin = countDownMS / 60 / 1000;
-  int targetSec = (countDownMS / 1000) % 60;
-  int targetCentiSec = (countDownMS / 10) % 100;
+  countDownCentiSec -= 1;
  
-  targetNum = targetMin * 10000 + targetSec * 100 + targetCentiSec;
-  // Serial.println(targetMin);
-  int displayIndex = timercnt % transistorPinCount;
-  int digit = (targetNum / (int)pow(10, (displayIndex + 2))) % 10;
-  char transistorMask = 0x01 << (transistorOffset + displayIndex);
+ 
+  int displayIndex = timercnt % 2;
+  int digitIndex = timercnt % transistorPinCount; 
+
+  if((digitIndex + debugIndexOffset) < 2) {
+    targetNum = (int)(countDownCentiSec  % 100L); //1/100 seconds
+  }else if((digitIndex + debugIndexOffset ) < 4){
+    targetNum = (int)((countDownCentiSec / 100L) % 60L); //seconds
+  }else if((digitIndex + debugIndexOffset) < 6){
+    targetNum = (int)(countDownCentiSec / 60L / 100L); //minutes
+  }
+
+  int divider = displayIndex ? 10 : 1;
+  int digit = (targetNum / divider) % 10;
+  // Serial.println(digit);
+  char transistorMask = 0x01 << (transistorOffset + digitIndex);
 
   PORTD = digitStates[digit] << 2; 
   PORTB = transistorMask | (0xC0 & digitStates[digit]) >> 6;
@@ -65,13 +74,17 @@ ISR(TIMER0_COMPA_vect){//timer0 interrupt 50Hz
 
 void setup() {
   // put your setup code here, to run once:
+  countDownCentiSec = 15L*60L*100L;
+  Serial.begin(9600);
+  Serial.println(countDownCentiSec);
   pinMode(A0, INPUT);
   setupTransistorPins();
   setupSegmentPins();
   setupTimer();
   
 
-  Serial.begin(9600);
+  
+  
 }
 
 int meas;
@@ -92,6 +105,6 @@ int currentMillis;
  */
 void loop() {
   // put your main code here, to run repeatedly:
-  meas = analogRead(A0);
-  Serial.println(meas);
+  // meas = analogRead(A0);
+  // Serial.println(meas);
 }
