@@ -1,26 +1,38 @@
-int transistorPins[] = {10, 11};
-int transistorPinCount = 2;
-int segmentPinStart = 2;
-int segmentPinEnd = 9;
+//int transistorPins[] = {10, 11};
+int transistorPinCount = 6;
+//int segmentPinStart = 2;
+//int segmentPinEnd = 9;
 int transistorOffset = 2;
+int sensorPins[] = {};
+int naksPin = 18; //must be 2, 3, 18, 19, 20, 21
+int redPins[] = {};
+int bluePins[] = {};
+int greenPins[] = {};
+int yellowPins[] = {};
 
 int targetNum = 43;
-unsigned long countDownCentiSec;
+unsigned long countDownCentiSec = 15L*60L*100L;
 unsigned long timercnt = 0;
+int naksCount = 0;
+unsigned int lastNaksTimer = 0;
+bool timerStart = false;
+bool blinkState = 0;
 
 char digitStates[10] = {
   B01110111, B01000001, B00111011, B01101011, B01001101, B01101110, B01111110, B01000011, B01111111, B01001111};
 
 
 void setupTransistorPins() {
-  for(int i = 0; i < transistorPinCount; i++){
-    pinMode(transistorPins[i], OUTPUT);
-  }
+  TRANSISTORPINS = 0xFF;
 }
 
 void setupSegmentPins() {
-  for(int i = segmentPinStart; i <= segmentPinEnd; i++){
-    pinMode(i, OUTPUT);
+  DDRK = 0xFF;
+}
+
+void setupSensorPins() {
+  for(int i = 0; i < 3; i++){
+    pinMode(sensorPins[i], INPUT);    
   }
 }
 
@@ -32,7 +44,7 @@ void setupTimer() {
 
   // set compare match register for 50hz increments
   //formula = clockSpeed / (herz * prescalar) - 1
-  OCR0A = 155;// = (8*10^6) / (50hz*1024) - 1 (must be <65536)
+  OCR0A = 312;// = (16*10^6) / (50hz*1024) - 1 (must be <65536)
   // turn on CTC mode
   TCCR0A |= (1 << WGM01);
   // Set CS02 and CS00 bits for 1024 prescaler
@@ -43,52 +55,141 @@ void setupTimer() {
   sei();
 }
 
+void setupNaksCounter(){
+  pinMode(naksPin, INPUT);
+  attachInterrupt(digitalPinToInterrupt(naksPin), onNaks, RISING);
+}
+
+void onNaks(){
+  if(lastNaksTimer = 100) {
+    naksCount++;
+    lastNaksTimer = 0;
+    blinkStart = 1;
+  }
+}
+
+void writeAllColors(int index, int State){
+  digitalWrite(redPins[index], State);
+  digitalWrite(bluePins[index], State);
+  digitalWrite(yellowPins[index], State);
+  digitalWrite(greenPins[index], State);
+}
+
+void blinkLeds(){
+  switch(blinkState){
+    case 0:
+      return;
+    case 1:
+      writeAllColors(1, HIGH);
+      writeAllColors(2, HIGH);
+      writeAllColors(3, HIGH);
+      writeAllColors(4, LOW);
+      return;
+    case 2:
+      writeAllColors(1, HIGH);
+      writeAllColors(2, HIGH);
+      writeAllColors(3, LOW);
+      writeAllColors(4, HIGH);
+      return;
+    case 3:
+      writeAllColors(1, HIGH);
+      writeAllColors(2, LOW);
+      writeAllColors(3, HIGH);
+      writeAllColors(4, HIGH);
+      return;
+    case 4:
+      writeAllColors(1, LOW);
+      writeAllColors(2, HIGH);
+      writeAllColors(3, HIGH);
+      writeAllColors(4, HIGH);
+      return;
+    default:
+      writeAllColors(0, HIGH);
+      writeAllColors(1, HIGH);
+      writeAllColors(2, HIGH);
+      writeAllColors(3, HIGH);
+      blinkState = 0;
+      return;
+    
+  }  
+  unsigned long currTime = countDownCentiSec;
+  if((lasTime - currTime) > 50) {
+    blinkState++;    
+  }
+}
+
+void setupLedPins(){
+  for(int i = 0; i < 4; i++){
+    pinMode(redPins[i], OUTPUT);
+    pinMode(bluePins[i], OUTPUT);
+    pinMode(greenPins[i], OUTPUT);
+    pinMode(yellowPins[i], OUTPUT);    
+  }
+}
+
 int debugIndexOffset = 2;
 
 ISR(TIMER0_COMPA_vect){//timer0 interrupt 50Hz
 
-  countDownCentiSec -= 1;
+  if(timerStart){
+    countDownCentiSec -= 2;
  
  
-  int displayIndex = timercnt % 2;
-  int digitIndex = timercnt % transistorPinCount; 
+    int displayIndex = timercnt % 2;
+    int digitIndex = timercnt % transistorPinCount; 
 
-  if((digitIndex + debugIndexOffset) < 2) {
-    targetNum = (int)(countDownCentiSec  % 100L); //1/100 seconds
-  }else if((digitIndex + debugIndexOffset ) < 4){
-    targetNum = (int)((countDownCentiSec / 100L) % 60L); //seconds
-  }else if((digitIndex + debugIndexOffset) < 6){
-    targetNum = (int)(countDownCentiSec / 60L / 100L); //minutes
+    if((digitIndex + debugIndexOffset) < 2) {
+      targetNum = (int)(countDownCentiSec  % 100L); //1/100 seconds
+    }else if((digitIndex + debugIndexOffset ) < 4){
+      targetNum = (int)((countDownCentiSec / 100L) % 60L); //seconds
+    }else if((digitIndex + debugIndexOffset) < 6){
+      targetNum = (int)(countDownCentiSec / 60L / 100L); //minutes
+    }
+
+    int divider = displayIndex ? 10 : 1;
+    int digit = (targetNum / divider) % 10;
+    // Serial.println(digit);
+    //char transistorMask = 0x01 << (transistorOffset + digitIndex);
+
+    PORTK = digitStates[digit];
+    TRANSISTORPORT = 0x01 << (transistorOffset + digitIndex);
+    //PORTD = digitStates[digit] << 2; 
+    //PORTB = transistorMask | (0xC0 & digitStates[digit]) >> 6;
+
+    timercnt++;
+    lastNaksTimer++;
+
   }
-
-  int divider = displayIndex ? 10 : 1;
-  int digit = (targetNum / divider) % 10;
-  // Serial.println(digit);
-  char transistorMask = 0x01 << (transistorOffset + digitIndex);
-
-  PORTD = digitStates[digit] << 2; 
-  PORTB = transistorMask | (0xC0 & digitStates[digit]) >> 6;
-
-  timercnt++;
+  
 }
 
 void setup() {
   // put your setup code here, to run once:
-  countDownCentiSec = 15L*60L*100L;
   Serial.begin(9600);
   Serial.println(countDownCentiSec);
   pinMode(A0, INPUT);
   setupTransistorPins();
   setupSegmentPins();
+  setupSensorPins();
+  setupNaksCounter();
+  setupLedPins();
   setupTimer();
-  
-
-  
-  
 }
 
-int meas;
-int currentMillis;
+int meas0;
+int meas1;
+int meas2;
+
+bool measure(){
+  meas0 = analogRead(sensorPins[0]);
+  meas1 = analogRead(sensorPins[1]);
+  meas2 = analogRead(sensorPins[2]);
+    
+  return (meas0 > 800) && (meas1 > 800) && (meas2 > 800);  
+    
+}
+
+unsigned long lastTime = countDownCentiSec;
 
 /* inputs
  *
@@ -105,6 +206,13 @@ int currentMillis;
  */
 void loop() {
   // put your main code here, to run repeatedly:
-  // meas = analogRead(A0);
-  // Serial.println(meas);
+  if(!timerStart) {
+    timerStart = measure();
+  }else if(naksCount > 50) {
+      timerStart = false;
+  }
+
+  if(blinkState){
+    blinkLeds();
+  }
 }
